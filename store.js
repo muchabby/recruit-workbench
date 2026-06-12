@@ -23,6 +23,7 @@
     { name: 'offers',       key: 'workbench.offers.v2',       kind: 'list' },
     { name: 'events',       key: 'workbench.events.v1',       kind: 'list' },
     { name: 'knowledge',    key: 'workbench.knowledge.v1',    kind: 'list' },
+    { name: 'meetings',     key: 'workbench.meetings.v1',     kind: 'list' },
     { name: 'review',       key: 'workbench.review.v1',       kind: 'single' }
   ];
   const byName = Object.fromEntries(COLLECTIONS.map((c) => [c.name, c]));

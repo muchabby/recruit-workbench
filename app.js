@@ -44,6 +44,7 @@ const wbSeed = {
   offers: defaultData.offers,
   events: defaultData.events,
   knowledge: defaultData.knowledge,
+  meetings: [],
   review: defaultData.review
 };
 // 登录模块用同一份 Supabase 配置。云端模式下：先 configure（建客户端），
@@ -75,10 +76,15 @@ const state = {
   eventEditingId: null,
   knowledgeEditingId: null,
   reviewEditing: false,
+  meetingEditingId: null,    // 会议编辑中的 id（'__new__' 表示新建）
+  meetingCategory: 'all',    // 会议分类筛选
+  meetingDateFrom: '',       // 会议时间筛选 起
+  meetingDateTo: '',         // 会议时间筛选 止
   recruitments: [],
   offerRecords: [],
   events: [],
   knowledge: [],
+  meetings: [],
   review: null
 };
 
@@ -119,6 +125,24 @@ const PRIORITY_OPTIONS = ['P0', 'P1', 'P2'];
 const JOB_LEVEL_OPTIONS = ['无', 'M', 'P', 'X']; // 职级：M=管理/P=专业/X=其他，无=未定
 const ROLE_CATEGORY_OPTIONS = ['社招', '校招', '实习', '外包']; // 职位类型（多选）
 const JOB_STATUS_SUGGEST = ['持续招聘', '已暂停', '已完成', '已关闭']; // 目前状态建议值（可输入新值）
+const MEETING_CATEGORIES = ['周会', '面试', '项目会', '其他']; // 会议分类
+
+// 规则抽取摘要：按句末标点切句，累加到约 maxLen 字停止。AI 接入前的兜底方案。
+function summarizeMeeting(text, maxLen = 50) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  if (clean.length <= maxLen) return clean;
+  // 按中英文句末标点切句
+  const sentences = clean.split(/(?<=[。！？!?；;])/).filter(Boolean);
+  let out = '';
+  for (const s of sentences) {
+    if ((out + s).length > maxLen) break;
+    out += s;
+  }
+  // 一句话都超长，或没切出来 → 硬截断
+  if (!out) out = clean.slice(0, maxLen);
+  return out.length < clean.length ? out.replace(/[，,、]$/, '') + '…' : out;
+}
 const ROLE_TYPE_OPTIONS = ['正编', '外包', '实习', '实习生', '顾问'];
 const CHANNEL_OPTIONS = ['BOSS', '内推', '猎头', '供应商/猎头', '官网投递', '招聘官网', '校招', '校企资源', '外包转正', '用人部门推荐', '其他'];
 const OFFER_PROCESS_OPTIONS = ['沟通中', '已发offer', '接受offer', '拒绝offer', '放弃入职'];
@@ -231,6 +255,7 @@ function pointStateToStore() {
   state.offerRecords = store.get('offers');
   state.events = store.get('events');
   state.knowledge = store.get('knowledge');
+  state.meetings = store.get('meetings');
   state.review = store.get('review');
 }
 
@@ -372,7 +397,7 @@ function renderRecruitFunnel() {
     { label: '已入职', value: f.onboard, rate: `入职率 ${f.onboardRate}%` },
     { label: '淘汰', value: f.dropped, rate: '' }
   ];
-  return `<section class="panel section-card"><div class="panel-head"><div><h3>招聘漏斗</h3><p>全部岗位候选人汇总，按当前阶段统计</p></div></div><div class="recruit-funnel">${stages.map((s) => `<div class="funnel-stage"><div class="fs-value">${s.value}</div><div class="fs-label">${safeText(s.label)}</div>${s.rate ? `<div class="fs-rate">${safeText(s.rate)}</div>` : ''}</div>`).join('')}</div></section>`;
+  return `<section class="panel section-card"><div class="panel-head"><div><h3>招聘漏斗</h3><p>全部岗位候选人汇总，按当前阶段统计</p></div></div><div class="funnel-cards">${stages.map((s) => `<div class="funnel-card"><div class="fc-value">${s.value}</div><div class="fc-label">${safeText(s.label)}</div>${s.rate ? `<div class="fc-rate">${safeText(s.rate)}</div>` : ''}</div>`).join('')}</div></section>`;
 }
 
 // 按渠道看 Offer 产出（环形图 + 图例）
@@ -398,8 +423,9 @@ function renderChannelAnalysis() {
     return { name, count: g.total, onboard: g.onboard, color: COLORS[i % COLORS.length], start, end, pct: Math.round((g.total / total) * 100) };
   });
   const gradient = segs.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(', ');
-  const legend = segs.map((s) => `<div class="donut-legend-row"><span class="donut-dot" style="background:${s.color}"></span><span class="donut-legend-name">${safeText(s.name)}</span><span class="donut-legend-val">${s.count} 个 · ${s.pct}%${s.onboard ? ` · 入职 ${s.onboard}` : ''}</span></div>`).join('');
-  return `<section class="panel section-card"><div class="panel-head"><div><h3>渠道分析</h3><p>各招聘渠道的 Offer 产出与入职</p></div></div><div class="donut-wrap"><div class="donut-chart" style="background:conic-gradient(${gradient})"><div class="donut-hole"><span class="donut-total">${total}</span><span class="donut-total-label">Offer 总数</span></div></div><div class="donut-legend">${legend}</div></div></section>`;
+  // 图例改方卡：每渠道一张正方形卡，显示色点+渠道名+大百分比（鼠标悬浮看数量/入职）
+  const legend = segs.map((s) => `<div class="donut-card" title="${safeText(s.name)}：${s.count} 个${s.onboard ? `，已入职 ${s.onboard}` : ''}"><span class="donut-card-dot" style="background:${s.color}"></span><span class="donut-card-name">${safeText(s.name)}</span><span class="donut-card-pct">${s.pct}%</span></div>`).join('');
+  return `<section class="panel section-card"><div class="panel-head"><div><h3>渠道分析</h3><p>各招聘渠道的 Offer 产出占比</p></div></div><div class="donut-wrap"><div class="donut-chart" style="background:conic-gradient(${gradient})"><div class="donut-hole"><span class="donut-total">${total}</span><span class="donut-total-label">Offer 总数</span></div></div><div class="donut-cards">${legend}</div></div></section>`;
 }
 
 
@@ -686,12 +712,67 @@ function renderOffersPage() {
 }
 
 function renderReviewPage() {
+  // 会议编辑态：整页表单
+  if (state.meetingEditingId) {
+    const editing = state.meetingEditingId === '__new__' ? {} : (state.meetings.find((m) => m.id === state.meetingEditingId) || {});
+    return `<section class="panel single-module"><div class="panel-head"><div><h2>复盘中心</h2><p>${editing.id ? '编辑会议记录' : '新增会议记录'}</p></div></div>${renderMeetingEditor(editing)}</section>`;
+  }
   const review = state.review || { title: '', summary: '', points: [] };
+  // 周报复盘编辑态
   if (state.reviewEditing) {
     const pointsText = (review.points || []).map((p) => `${p.title}｜${p.text}`).join('\n');
-    return `<section class="panel single-module"><div class="panel-head"><div><h2>复盘中心</h2><p>编辑本期复盘</p></div></div><form class="editor-form" id="reviewEditor"><label class="field"><span>复盘标题</span><input name="title" type="text" value="${safeText(review.title)}" /></label><label class="field"><span>总结概述</span><textarea name="summary" rows="3">${safeText(review.summary)}</textarea></label><label class="field"><span>复盘要点（每行一条，格式：要点标题｜要点内容）</span><textarea name="points" rows="6">${safeText(pointsText)}</textarea></label><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-review-edit">取消</button></div></form></section>`;
+    return `<section class="panel single-module"><div class="panel-head"><div><h2>复盘中心</h2><p>编辑周报复盘</p></div></div><form class="editor-form" id="reviewEditor"><label class="field"><span>复盘标题</span><input name="title" type="text" value="${safeText(review.title)}" /></label><label class="field"><span>总结概述</span><textarea name="summary" rows="3">${safeText(review.summary)}</textarea></label><label class="field"><span>复盘要点（每行一条，格式：要点标题｜要点内容）</span><textarea name="points" rows="6">${safeText(pointsText)}</textarea></label><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-review-edit">取消</button></div></form></section>`;
   }
-  return `<section class="panel single-module"><div class="panel-head"><div><h2>复盘中心</h2><p>周复盘与 AI 自动摘要</p></div><div class="panel-tools"><button class="toolbar-btn highlight" type="button" data-action="edit-review">编辑复盘</button></div></div><div class="review-box review-box-large"><div class="review-title">${safeText(review.title || '暂无复盘标题')}</div><div class="review-summary">${safeText(review.summary || '暂无总结')}</div><div class="review-points">${(review.points || []).map((item) => `<article class="review-point"><strong>${safeText(item.title)}</strong><div>${safeText(item.text)}</div></article>`).join('') || '<div class="job-desc">还没有复盘要点，点“编辑复盘”补充</div>'}</div></div></section>`;
+  // 正常态：顶部周报复盘卡 + 会议复盘库
+  const reviewCard = `<div class="trend-card"><div class="trend-head-row"><div class="trend-title">周报复盘：${safeText(review.title || '暂无标题')}</div><button class="toolbar-btn" type="button" data-action="edit-review">编辑周报</button></div><div class="review-summary">${safeText(review.summary || '暂无总结')}</div><div class="review-points">${(review.points || []).map((item) => `<article class="review-point"><strong>${safeText(item.title)}</strong><div>${safeText(item.text)}</div></article>`).join('') || '<div class="job-desc">还没有复盘要点</div>'}</div></div>`;
+  return `<section class="panel single-module"><div class="panel-head"><div><h2>复盘中心</h2><p>周报复盘 + 会议/面试记录库（AI 摘要）</p></div><div class="panel-tools"><button class="toolbar-btn highlight" type="button" data-action="add-meeting">新增会议记录</button></div></div>${reviewCard}${renderMeetingLibrary()}</section>`;
+}
+
+// 会议复盘库：分类 + 时间筛选 + 卡片网格（按日期倒序，月份分组）
+function renderMeetingLibrary() {
+  const cats = [{ key: 'all', label: '全部' }, ...MEETING_CATEGORIES.map((c) => ({ key: c, label: c }))];
+  const chips = cats.map((c) => `<button class="chip ${state.meetingCategory === c.key ? 'active' : ''}" type="button" data-meeting-cat="${safeText(c.key)}">${safeText(c.label)}</button>`).join('');
+  const list = filterMeetings();
+  // 按月份分组
+  const groups = new Map();
+  list.forEach((m) => {
+    const month = (m.date || '').slice(0, 7) || '未填日期';
+    if (!groups.has(month)) groups.set(month, []);
+    groups.get(month).push(m);
+  });
+  const body = list.length
+    ? [...groups.entries()].map(([month, items]) => `<div class="meeting-month"><div class="meeting-month-head">${safeText(month)}（${items.length}）</div><div class="meeting-grid">${items.map(renderMeetingCard).join('')}</div></div>`).join('')
+    : '<div class="job-desc">还没有会议记录，点右上「新增会议记录」添加。粘贴会议原文后会自动生成约 50 字摘要。</div>';
+  return `<div class="trend-card"><div class="trend-title">会议 / 面试记录库</div><div class="meeting-filters"><div class="chip-row">${chips}</div><div class="meeting-date-filter"><label class="field short"><input type="date" id="meetingDateFrom" value="${safeText(state.meetingDateFrom)}" /></label><span class="date-sep">~</span><label class="field short"><input type="date" id="meetingDateTo" value="${safeText(state.meetingDateTo)}" /></label></div></div>${body}</div>`;
+}
+
+function filterMeetings() {
+  const q = state.query.toLowerCase();
+  return (state.meetings || []).filter((m) => {
+    const matchCat = state.meetingCategory === 'all' || m.category === state.meetingCategory;
+    const fromOk = !state.meetingDateFrom || (m.date || '') >= state.meetingDateFrom;
+    const toOk = !state.meetingDateTo || (m.date || '') <= state.meetingDateTo;
+    const matchQ = !q || [m.title, m.category, m.summary, m.content].join(' ').toLowerCase().includes(q);
+    return matchCat && fromOk && toOk && matchQ;
+  }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+const MEETING_CAT_BADGE = { '周会': 'info', '面试': 'warn', '项目会': 'ok', '其他': 'plum' };
+function renderMeetingCard(m) {
+  const badge = MEETING_CAT_BADGE[m.category] || 'info';
+  const summary = m.summary || summarizeMeeting(m.content) || '（暂无摘要）';
+  return `<article class="meeting-card" role="button" tabindex="0" data-kind="meeting" data-id="${safeText(m.id)}"><div class="meeting-card-head"><span class="badge ${badge}">${safeText(m.category || '其他')}</span><span class="meeting-date">${safeText(m.date || '未填日期')}</span></div><h4 class="meeting-title">${safeText(m.title || '未命名会议')}</h4><p class="meeting-summary">${safeText(summary)}</p></article>`;
+}
+
+function renderMeetingDetail(m) {
+  const badge = MEETING_CAT_BADGE[m.category] || 'info';
+  const summary = m.summary || summarizeMeeting(m.content) || '（暂无摘要）';
+  return `<div class="detail-stack"><div class="trend-card"><div class="trend-title">会议信息</div><div class="drawer-grid"><div class="kv"><span>分类</span><strong><span class="badge ${badge}">${safeText(m.category || '其他')}</span></strong></div><div class="kv"><span>日期</span><strong>${safeText(m.date || '未填')}</strong></div><div class="kv"><span>标题</span><strong>${safeText(m.title || '未命名')}</strong></div></div></div><div class="trend-card"><div class="trend-title">AI 摘要（约 50 字）</div><div class="drawer-note meeting-summary-box"><p>${safeText(summary)}</p></div></div><div class="trend-card"><div class="trend-title">会议原文</div><div class="drawer-note">${renderMarkdownBlock(m.content || '')}</div></div><div class="drawer-actions"><button class="toolbar-btn highlight" type="button" data-action="edit-meeting" data-id="${safeText(m.id)}">编辑</button><button class="toolbar-btn danger-btn" type="button" data-action="delete-meeting" data-id="${safeText(m.id)}">删除</button><button class="toolbar-btn" type="button" data-action="close-drawer">关闭</button></div></div>`;
+}
+
+function renderMeetingEditor(m = {}) {
+  const catOpts = MEETING_CATEGORIES.map((c) => `<option value="${safeText(c)}" ${m.category === c ? 'selected' : ''}>${safeText(c)}</option>`).join('');
+  return `<form class="editor-form" id="meetingEditor" data-meeting-id="${safeText(m.id || '')}"><div class="editor-grid"><label class="field"><span>分类</span><select name="category">${catOpts}</select></label><label class="field"><span>会议日期</span><input name="date" type="date" value="${safeText(m.date || '')}" /></label><label class="field field-span-2"><span>会议标题</span><input name="title" type="text" value="${safeText(m.title || '')}" placeholder="如 第23周招聘周会 / 张三终面" /></label><label class="field field-span-2"><span>会议原文（粘贴完整内容，保存时自动生成约 50 字摘要）</span><textarea name="content" rows="10">${safeText(m.content || '')}</textarea></label><label class="field field-span-2"><span>摘要（留空则自动生成；也可手动改写）</span><textarea name="summary" rows="2" placeholder="留空自动生成">${safeText(m.summary || '')}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-meeting-edit">取消</button>${m.id ? '<button class="toolbar-btn danger-btn" type="button" data-action="delete-meeting-edit">删除</button>' : ''}</div></form>`;
 }
 
 function renderKnowledgeEditor(item = {}) {
@@ -1084,6 +1165,41 @@ function saveReview(form) {
   renderRoute('review');
 }
 
+function upsertMeeting(form) {
+  const data = new FormData(form);
+  const title = clean(data.get('title'));
+  const content = clean(data.get('content'));
+  if (!title && !content) { toast('请至少填写标题或会议原文', 'danger'); return false; }
+  const id = clean(form.dataset.meetingId) || `mtg-${Date.now()}`;
+  let summary = clean(data.get('summary'));
+  if (!summary) summary = summarizeMeeting(content); // 留空则规则自动生成（AI 接入后换这里）
+  const item = {
+    id,
+    category: clean(data.get('category')) || '其他',
+    date: clean(data.get('date')),
+    title: title || '未命名会议',
+    content,
+    summary,
+    createdAt: getRecruitmentById ? (state.meetings.find((m) => m.id === id)?.createdAt || nowStamp()) : nowStamp()
+  };
+  store.save('meetings', item);
+  state.meetingEditingId = null;
+  toast('会议记录已保存');
+  renderRoute('review');
+  return true;
+}
+
+function deleteMeeting(id) {
+  store.remove('meetings', id);
+  state.meetingEditingId = null;
+  renderRoute('review');
+}
+
+// 时间戳（避免直接 new Date() 在测试桩里出问题，浏览器正常用）
+function nowStamp() {
+  try { return new Date().toISOString().slice(0, 10); } catch { return ''; }
+}
+
 // ---- 数据导出 / 导入 / 清空 ----
 function exportData() {
   const payload = {
@@ -1266,6 +1382,18 @@ function bindRouteEvents() {
     root.querySelector('[data-action="edit-review"]')?.addEventListener('click', () => { state.reviewEditing = true; renderRoute('review'); });
     root.querySelector('[data-action="cancel-review-edit"]')?.addEventListener('click', () => { state.reviewEditing = false; renderRoute('review'); });
     root.querySelector('#reviewEditor')?.addEventListener('submit', (event) => { event.preventDefault(); saveReview(event.currentTarget); });
+    // 会议库：新增/分类筛选/时间筛选/卡片点击/编辑表单
+    root.querySelector('[data-action="add-meeting"]')?.addEventListener('click', () => { state.meetingEditingId = '__new__'; renderRoute('review'); });
+    root.querySelectorAll('[data-meeting-cat]').forEach((btn) => btn.addEventListener('click', () => { state.meetingCategory = btn.dataset.meetingCat; renderRoute('review'); }));
+    root.querySelector('#meetingDateFrom')?.addEventListener('change', (e) => { state.meetingDateFrom = e.target.value; renderRoute('review'); });
+    root.querySelector('#meetingDateTo')?.addEventListener('change', (e) => { state.meetingDateTo = e.target.value; renderRoute('review'); });
+    root.querySelectorAll('[data-kind="meeting"]').forEach((card) => {
+      const m = state.meetings.find((x) => x.id === card.dataset.id);
+      if (m) card.addEventListener('click', () => openDrawer(m, '会议详情', renderMeetingDetail(m)));
+    });
+    root.querySelector('#meetingEditor')?.addEventListener('submit', (event) => { event.preventDefault(); upsertMeeting(event.currentTarget); });
+    root.querySelector('[data-action="cancel-meeting-edit"]')?.addEventListener('click', () => { state.meetingEditingId = null; renderRoute('review'); });
+    root.querySelector('[data-action="delete-meeting-edit"]')?.addEventListener('click', async () => { const id = clean(root.querySelector('#meetingEditor')?.dataset.meetingId); if (id && await confirmAction({ title: '删除会议记录', message: '确定删除这条会议记录？删除后不可恢复。', okText: '删除' })) deleteMeeting(id); });
     return;
   }
 
@@ -1287,7 +1415,7 @@ function handleCreate() {
     case 'offers': state.offerEditingId = null; renderRoute('offers'); openDrawer({ title: '新建 Offer' }, '新建 Offer', `<div class="trend-card"><div class="trend-title">新建 Offer</div>${renderOfferEditForm({})}</div>`); bindDrawerOfferForm(); break;
     case 'events': state.eventEditingId = '__new__'; renderRoute('events'); break;
     case 'knowledge': state.knowledgeEditingId = '__new__'; renderRoute('knowledge'); break;
-    case 'review': state.reviewEditing = true; renderRoute('review'); break;
+    case 'review': state.meetingEditingId = '__new__'; renderRoute('review'); break;
     default: state.editingRecruitmentId = '__new__'; renderRoute('recruitment');
   }
 }
@@ -1365,6 +1493,11 @@ function attachGlobalEvents() {
     if (offerStatusBtn) { closeDrawer(); updateOfferStatus(offerStatusBtn.dataset.offerId, offerStatusBtn.dataset.offerStatus); return; }
     const editOfferBtn = event.target.closest('[data-action="edit-offer"]');
     if (editOfferBtn) { closeDrawer(); state.offerEditingId = editOfferBtn.dataset.id; renderRoute('offers'); return; }
+    // 会议详情抽屉里的编辑/删除
+    const editMtg = event.target.closest('[data-action="edit-meeting"]');
+    if (editMtg) { closeDrawer(); state.meetingEditingId = editMtg.dataset.id; renderRoute('review'); return; }
+    const delMtg = event.target.closest('[data-action="delete-meeting"]');
+    if (delMtg) { const id = delMtg.dataset.id; closeDrawer(); confirmAction({ title: '删除会议记录', message: '确定删除这条会议记录？删除后不可恢复。', okText: '删除' }).then((ok) => { if (ok) deleteMeeting(id); }); return; }
     if (event.target.closest('[data-action="close-drawer"]')) closeDrawer();
     const link = event.target.closest('[data-action="open-knowledge-link"]');
     if (link?.dataset.url) window.open(normalizeUrl(link.dataset.url), '_blank', 'noopener');
