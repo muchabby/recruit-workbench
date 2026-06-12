@@ -121,6 +121,58 @@ const CHANNEL_OPTIONS = ['BOSS', '内推', '猎头', '供应商/猎头', '官网
 const OFFER_PROCESS_OPTIONS = ['沟通中', '已发offer', '接受offer', '拒绝offer', '放弃入职'];
 const OFFER_FINAL_OPTIONS = ['', '待入职', '已入职', '放弃入职', '已离职', '未到岗'];
 const EVENT_RISK_OPTIONS = [{ v: 'danger', t: '高（P0）' }, { v: 'warn', t: '中（P1）' }, { v: 'ok', t: '低（P2）' }];
+
+// 部门分类体系：三大类 → 子部门/项目组清单。用于 Offer 部门两级联动 + 按部门快速查看分组。
+const DEPT_TAXONOMY = {
+  '公共部门': ['信息技术中心', '行政部', '人力资源部', '法律与公共事务部', '财务部', '企管部', '证券部', '审计部', '安全部', '总经理室', '采购运营部', 'IP运营部'],
+  '研发部门': ['P01项目', 'ATM项目', 'MODX项目', 'M88项目', 'M95项目', 'T01项目', 'M71项目', 'M72项目', 'M98项目', 'N98项目', 'M81项目', 'P36项目', '技术中心', '音频部', '美术商务部'],
+  '运营部门': ['运营总经理室', '摘星工作室', '不二工作室', '三重奏工作室', 'INJOY工作室', '新加坡发行部', '战略合作部', 'Global广告投放中心', '用户增长部', '广告投放中心', '市场媒介中心', '美宣中心', '技术中台部', '数据中心', '安全质量中心', '客服部', '广州天狐']
+};
+const DEPT_GROUPS = Object.keys(DEPT_TAXONOMY); // ['公共部门','研发部门','运营部门']
+// 子部门名 → 大类的反查表
+const SUBDEPT_TO_GROUP = (() => {
+  const m = {};
+  for (const g of DEPT_GROUPS) for (const d of DEPT_TAXONOMY[g]) m[d] = g;
+  return m;
+})();
+
+// 把历史/口语化的部门写法归一到 { group:大类, dept:标准子部门 }。
+// 兼容：带前缀（公共部门-/运营-/吉比特-雷霆游戏>）、项目代号（M98→M98项目）、
+//       别名（IT部→信息技术中心、技术中台*→技术中台部）。查不到归「未分类」。
+function normalizeDept(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return { group: '未分类', dept: '未分类' };
+  // 1) 剥常见前缀，取最后一段
+  s = s.replace(/^吉比特[-－>＞]?雷霆游戏\s*[>＞]?\s*/i, '');
+  s = s.replace(/^(公共部门|研发部门|运营部门|运营|研发|公共)\s*[-－>＞]\s*/i, '');
+  s = s.split(/[-－>＞]/).pop().trim(); // 多级如「技术中台-数据工具开发组」取末段，再靠别名兜
+  // 2) 已经是标准子部门名，直接命中
+  if (SUBDEPT_TO_GROUP[s]) return { group: SUBDEPT_TO_GROUP[s], dept: s };
+  // 3) 别名 / 模式映射
+  if (/^IT部$|信息技术|信息中心/i.test(s)) return { group: '公共部门', dept: '信息技术中心' };
+  if (/技术中台|运营支撑|数据工具|前端组|客户端组/.test(s) || /^技术中台/.test(String(raw))) return { group: '运营部门', dept: '技术中台部' };
+  if (/客服/.test(s)) return { group: '运营部门', dept: '客服部' };
+  if (/新加坡|发行/.test(s)) return { group: '运营部门', dept: '新加坡发行部' };
+  // 4) 项目代号：M98 / P36 / ATM / T01 等 → 补「项目」后缀归研发
+  const codeMatch = String(raw).match(/\b([A-Za-z]+\d+|ATM|MODX)\b/i);
+  if (codeMatch) {
+    const proj = codeMatch[1].toUpperCase() + '项目';
+    if (SUBDEPT_TO_GROUP[proj]) return { group: '研发部门', dept: proj };
+    return { group: '研发部门', dept: proj }; // 即便不在清单也归研发（项目代号特征明显）
+  }
+  // 5) 末段直接是某大类下的别名残留，再扫一遍包含关系
+  for (const g of DEPT_GROUPS) {
+    const hit = DEPT_TAXONOMY[g].find((d) => s.includes(d) || d.includes(s));
+    if (hit) return { group: g, dept: hit };
+  }
+  return { group: '未分类', dept: s };
+}
+
+// 取一条 offer 的大类：优先用已存的 deptGroup，没有则用 normalizeDept 从 department 推。
+function offerGroupOf(record) {
+  if (record && DEPT_GROUPS.includes(record.deptGroup)) return record.deptGroup;
+  return normalizeDept(record && record.department).group;
+}
 // 项目看板列
 const KANBAN_STATUS = ['待开始', '进行中', '已完成', '搁置'];
 const KANBAN_BADGE = { '待开始': 'info', '进行中': 'warn', '已完成': 'ok', '搁置': 'danger' };
@@ -430,19 +482,44 @@ function renderOfferSummaryCards(records) {
 }
 
 function renderOfferDepartmentCards(records) {
+  // 按三大类（公共/研发/运营）归并；老数据用 normalizeDept 兜底推大类
   const groups = new Map();
   records.forEach((item) => {
-    const key = item.department || '未分类';
-    if (!groups.has(key)) groups.set(key, { department: key, total: 0, accepted: 0, employed: 0, pending: 0 });
-    const group = groups.get(key);
-    group.total += 1;
-    if (item.processStatus === '接受offer') group.accepted += 1;
-    if (item.finalStatus === '已入职') group.employed += 1;
-    if (!item.finalStatus) group.pending += 1;
+    const key = offerGroupOf(item);
+    if (!groups.has(key)) groups.set(key, { group: key, total: 0, accepted: 0, employed: 0, pending: 0 });
+    const g = groups.get(key);
+    g.total += 1;
+    if (item.processStatus === '接受offer') g.accepted += 1;
+    if (item.finalStatus === '已入职') g.employed += 1;
+    if (!item.finalStatus) g.pending += 1;
   });
-  const list = [...groups.values()];
+  // 固定顺序：公共→研发→运营，末尾追加「未分类」（若有）
+  const order = [...DEPT_GROUPS, '未分类'];
+  const list = order.filter((k) => groups.has(k)).map((k) => groups.get(k));
   if (!list.length) return '<div class="job-desc">暂无部门统计</div>';
-  return `<div class="card-grid card-grid-large">${list.map((group) => `<article class="job-card"><div class="job-card-head"><div><h4>${safeText(group.department)}</h4><p class="job-desc">总计 ${safeText(group.total)} 条</p></div><span class="badge info">部门</span></div><div class="job-meta"><span>接受 ${safeText(group.accepted)}</span><span>已入职 ${safeText(group.employed)}</span><span>待跟进 ${safeText(group.pending)}</span></div></article>`).join('')}</div>`;
+  return `<div class="card-grid card-grid-large">${list.map((g) => `<article class="job-card dept-group-card" role="button" tabindex="0" data-offer-group="${safeText(g.group)}"><div class="job-card-head"><div><h4>${safeText(g.group)}</h4><p class="job-desc">总计 ${safeText(g.total)} 条 · 点开看子部门</p></div><span class="badge info">大类</span></div><div class="job-meta"><span>接受 ${safeText(g.accepted)}</span><span>已入职 ${safeText(g.employed)}</span><span>待跟进 ${safeText(g.pending)}</span></div></article>`).join('')}</div>`;
+}
+
+// 下钻：某大类下按子部门分组的明细（drawer 内）
+function renderOfferGroupDetail(group, records) {
+  const inGroup = records.filter((r) => offerGroupOf(r) === group);
+  // 按子部门聚合
+  const subMap = new Map();
+  inGroup.forEach((r) => {
+    const sub = (DEPT_GROUPS.includes(r.deptGroup) && r.department) ? r.department : normalizeDept(r.department).dept;
+    if (!subMap.has(sub)) subMap.set(sub, []);
+    subMap.get(sub).push(r);
+  });
+  const subBlocks = [...subMap.entries()].map(([sub, rows]) => {
+    const employed = rows.filter((r) => r.finalStatus === '已入职').length;
+    const list = rows.map((r) => {
+      const st = r.finalStatus || r.processStatus || '待确认';
+      const badge = /已入职/.test(st) ? 'ok' : /接受/.test(st) ? 'warn' : /拒绝|放弃/.test(st) ? 'danger' : 'info';
+      return `<article class="candidate-row"><div><strong>${safeText(r.name)}</strong><div class="job-desc">${safeText(`${r.plannedDate || '暂无'} · ${r.title || '暂无岗位'}`)}</div></div><div>${safeText(r.channel || '暂无')}</div><div><span class="badge ${badge}">${safeText(st)}</span></div></article>`;
+    }).join('');
+    return `<div class="trend-card"><div class="trend-title">${safeText(sub)} <span class="job-desc">（${rows.length} 条 · 已入职 ${employed}）</span></div><div class="candidate-list">${list}</div></div>`;
+  }).join('');
+  return `<div class="detail-stack"><div class="trend-card"><div class="trend-title">${safeText(group)}</div><div class="job-desc">共 ${safeText(inGroup.length)} 条，按子部门/项目组拆分如下</div></div>${subBlocks || '<div class="job-desc">该大类下暂无记录</div>'}</div>`;
 }
 
 function renderOfferRows(records) {
@@ -469,7 +546,21 @@ function renderOfferMetricDetail(metric, records) {
 function renderOfferEditForm(record = {}) {
   // 关联岗位下拉：选中后自动回填部门/岗位名，并存 jobId 作为关联键
   const jobOpts = `<option value="">（不关联，手动填写）</option>` + state.recruitments.map((r) => `<option value="${safeText(r.id)}" ${record.jobId === r.id ? 'selected' : ''}>${safeText(`${r.title}${r.department ? ' · ' + r.department : ''}`)}</option>`).join('');
-  return `<form class="editor-form" id="offerEditor" data-offer-id="${safeText(record.id || '')}"><div class="editor-grid"><label class="field field-span-2"><span>关联岗位（选了自动带出部门/岗位名）</span><select name="jobId" id="offerJobPicker">${jobOpts}</select></label><label class="field"><span>拟录用时间</span><input name="plannedDate" type="date" value="${safeText(record.plannedDate || '')}" /></label><label class="field"><span>姓名</span><input name="name" type="text" value="${safeText(record.name || '')}" /></label><label class="field"><span>部门</span><input name="department" id="offerDept" type="text" value="${safeText(record.department || '')}" /></label><label class="field"><span>岗位名称</span><input name="title" id="offerTitle" type="text" value="${safeText(record.title || '')}" /></label><label class="field"><span>岗位类型</span><select name="roleType">${optionTags(ROLE_TYPE_OPTIONS, record.roleType)}</select></label><label class="field"><span>流程状态</span><select name="processStatus">${optionTags(OFFER_PROCESS_OPTIONS, record.processStatus)}</select></label><label class="field"><span>渠道</span><select name="channel">${optionTags(CHANNEL_OPTIONS, record.channel)}</select></label><label class="field"><span>最终状态</span><select name="finalStatus">${optionTags(OFFER_FINAL_OPTIONS, record.finalStatus)}</select></label><label class="field field-span-2"><span>备注</span><textarea name="note" rows="4">${safeText(record.note || '')}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-offer-edit">取消</button><button class="toolbar-btn danger-btn" type="button" data-action="delete-offer">删除</button></div></form>`;
+  // 部门两级联动：大类已存用 deptGroup，否则从 department 推；子部门同理
+  const curGroup = DEPT_GROUPS.includes(record.deptGroup) ? record.deptGroup : normalizeDept(record.department).group;
+  const curDept = (DEPT_GROUPS.includes(record.deptGroup) && record.department) ? record.department : normalizeDept(record.department).dept;
+  const groupOpts = `<option value="">（请选择大类）</option>` + DEPT_GROUPS.map((g) => `<option value="${safeText(g)}" ${curGroup === g ? 'selected' : ''}>${safeText(g)}</option>`).join('');
+  const deptOpts = subDeptOptions(curGroup, curDept);
+  return `<form class="editor-form" id="offerEditor" data-offer-id="${safeText(record.id || '')}"><div class="editor-grid"><label class="field field-span-2"><span>关联岗位（选了自动带出部门/岗位名）</span><select name="jobId" id="offerJobPicker">${jobOpts}</select></label><label class="field"><span>拟录用时间</span><input name="plannedDate" type="date" value="${safeText(record.plannedDate || '')}" /></label><label class="field"><span>姓名</span><input name="name" type="text" value="${safeText(record.name || '')}" /></label><label class="field"><span>部门大类</span><select name="deptGroup" id="offerDeptGroup">${groupOpts}</select></label><label class="field"><span>子部门 / 项目组</span><select name="department" id="offerDept">${deptOpts}</select></label><label class="field"><span>岗位名称</span><input name="title" id="offerTitle" type="text" value="${safeText(record.title || '')}" /></label><label class="field"><span>岗位类型</span><select name="roleType">${optionTags(ROLE_TYPE_OPTIONS, record.roleType)}</select></label><label class="field"><span>流程状态</span><select name="processStatus">${optionTags(OFFER_PROCESS_OPTIONS, record.processStatus)}</select></label><label class="field"><span>渠道</span><select name="channel">${optionTags(CHANNEL_OPTIONS, record.channel)}</select></label><label class="field"><span>最终状态</span><select name="finalStatus">${optionTags(OFFER_FINAL_OPTIONS, record.finalStatus)}</select></label><label class="field field-span-2"><span>备注</span><textarea name="note" rows="4">${safeText(record.note || '')}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-offer-edit">取消</button><button class="toolbar-btn danger-btn" type="button" data-action="delete-offer">删除</button></div></form>`;
+}
+
+// 生成某大类下子部门的 option 标签；group 为空则给提示项
+function subDeptOptions(group, selected) {
+  const subs = DEPT_TAXONOMY[group] || [];
+  const head = `<option value="">${group ? '（请选择子部门）' : '（请先选大类）'}</option>`;
+  // 选中值不在清单里（老数据特殊写法）也补一个，避免丢失
+  const extra = (selected && !subs.includes(selected)) ? `<option value="${safeText(selected)}" selected>${safeText(selected)}</option>` : '';
+  return head + extra + subs.map((d) => `<option value="${safeText(d)}" ${selected === d ? 'selected' : ''}>${safeText(d)}</option>`).join('');
 }
 
 function renderKnowledgeDetail(item) {
@@ -754,6 +845,7 @@ function syncCandidateToOffer(job, cand) {
       jobId: job.id,
       plannedDate: '',
       name: cand.name || '',
+      deptGroup: normalizeDept(job.department).group, // 从岗位部门推大类，避免归「未分类」
       department: job.department || '',
       title: job.title || '',
       roleType: '',
@@ -796,6 +888,7 @@ function upsertOffer(form) {
     id,
     plannedDate: clean(data.get('plannedDate')),
     name,
+    deptGroup: clean(data.get('deptGroup')),
     department: clean(data.get('department')),
     title: clean(data.get('title')),
     roleType: clean(data.get('roleType')),
@@ -806,6 +899,10 @@ function upsertOffer(form) {
     candidateId: existing?.candidateId || '', // 保留候选人关联键，编辑不丢
     note: clean(data.get('note'))
   };
+  // 部门大类兜底：只填了子部门没选大类时，用 normalizeDept 自动推
+  if (!DEPT_GROUPS.includes(item.deptGroup)) {
+    item.deptGroup = normalizeDept(item.department).group;
+  }
   // 业务校验：拟录用日期不能早于关联岗位的需求时间
   if (item.plannedDate && item.jobId) {
     const job = getRecruitmentById(item.jobId);
@@ -1056,6 +1153,7 @@ function bindRouteEvents() {
     root.querySelector('#offerDateTo')?.addEventListener('change', (event) => { state.offerDateTo = event.target.value; savePrefs(); renderRoute('offers'); });
     root.querySelectorAll('[data-offer-view]').forEach((button) => button.addEventListener('click', () => { state.offerView = button.dataset.offerView; savePrefs(); renderRoute('offers'); }));
     root.querySelectorAll('[data-offer-metric]').forEach((button) => button.addEventListener('click', () => openDrawer({ title: 'Offer 明细' }, 'Offer 明细', renderOfferMetricDetail(button.dataset.offerMetric, getOfferRecords()))));
+    root.querySelectorAll('[data-offer-group]').forEach((card) => card.addEventListener('click', () => openDrawer({ title: card.dataset.offerGroup }, `${card.dataset.offerGroup} · 子部门明细`, renderOfferGroupDetail(card.dataset.offerGroup, getOfferRecords()))));
     root.querySelectorAll('[data-kind="offer"]').forEach((row) => {
       const record = getOfferRecords().find((item) => item.id === row.dataset.id);
       if (record) row.addEventListener('click', () => openDrawer(record, 'Offer 详情', renderOfferDetail(record)));
@@ -1162,18 +1260,34 @@ function bindDrawerOfferForm() {
   bindOfferJobPicker(body);
 }
 
-// 关联岗位下拉：选中岗位后把部门/岗位名回填到对应输入框（root 可为 routeView 或 drawerBody）
+// 关联岗位下拉 + 部门两级联动（root 可为 routeView 或 drawerBody）
 function bindOfferJobPicker(root) {
-  const picker = root?.querySelector('#offerJobPicker');
-  if (!picker) return;
-  picker.addEventListener('change', (event) => {
-    const job = getRecruitmentById(event.target.value);
-    if (!job) return;
-    const dept = root.querySelector('#offerDept');
-    const title = root.querySelector('#offerTitle');
-    if (dept) dept.value = job.department || '';
-    if (title) title.value = job.title || '';
-  });
+  if (!root) return;
+  const groupSel = root.querySelector('#offerDeptGroup');
+  const deptSel = root.querySelector('#offerDept');
+  // 大类变 → 重建子部门选项
+  if (groupSel && deptSel) {
+    groupSel.addEventListener('change', (event) => {
+      deptSel.innerHTML = subDeptOptions(event.target.value, '');
+    });
+  }
+  // 关联岗位变 → 用 normalizeDept 回填两级部门 + 岗位名
+  const picker = root.querySelector('#offerJobPicker');
+  if (picker) {
+    picker.addEventListener('change', (event) => {
+      const job = getRecruitmentById(event.target.value);
+      if (!job) return;
+      const title = root.querySelector('#offerTitle');
+      if (title) title.value = job.title || '';
+      if (groupSel && deptSel) {
+        const { group, dept } = normalizeDept(job.department);
+        if (DEPT_GROUPS.includes(group)) {
+          groupSel.value = group;
+          deptSel.innerHTML = subDeptOptions(group, dept);
+        }
+      }
+    });
+  }
 }
 
 function attachGlobalEvents() {
