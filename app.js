@@ -116,10 +116,10 @@ const normalizeUrl = (value) => {
 
 // ---- 统一枚举（避免手敲文本写不一致）----
 const PRIORITY_OPTIONS = ['P0', 'P1', 'P2'];
-const ROLE_TYPE_OPTIONS = ['正编', '外包', '实习', '顾问'];
-const CHANNEL_OPTIONS = ['BOSS', '内推', '猎头', '官网投递', '校招', '其他'];
+const ROLE_TYPE_OPTIONS = ['正编', '外包', '实习', '实习生', '顾问'];
+const CHANNEL_OPTIONS = ['BOSS', '内推', '猎头', '供应商/猎头', '官网投递', '招聘官网', '校招', '校企资源', '外包转正', '用人部门推荐', '其他'];
 const OFFER_PROCESS_OPTIONS = ['沟通中', '已发offer', '接受offer', '拒绝offer', '放弃入职'];
-const OFFER_FINAL_OPTIONS = ['', '已入职', '已离职', '未到岗'];
+const OFFER_FINAL_OPTIONS = ['', '待入职', '已入职', '放弃入职', '已离职', '未到岗'];
 const EVENT_RISK_OPTIONS = [{ v: 'danger', t: '高（P0）' }, { v: 'warn', t: '中（P1）' }, { v: 'ok', t: '低（P2）' }];
 // 项目看板列
 const KANBAN_STATUS = ['待开始', '进行中', '已完成', '搁置'];
