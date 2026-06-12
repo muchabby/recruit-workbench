@@ -331,7 +331,7 @@ function filterOffers() {
     const fromOk = !state.offerDateFrom || item.plannedDate >= state.offerDateFrom;
     const toOk = !state.offerDateTo || item.plannedDate <= state.offerDateTo;
     return matchQuery && matchView && fromOk && toOk;
-  });
+  }).sort((a, b) => String(b.plannedDate || '').localeCompare(String(a.plannedDate || ''))); // 按拟录用时间倒序，最新在上
 }
 
 function renderStatCards() {
@@ -375,7 +375,7 @@ function renderRecruitFunnel() {
   return `<section class="panel section-card"><div class="panel-head"><div><h3>招聘漏斗</h3><p>全部岗位候选人汇总，按当前阶段统计</p></div></div><div class="recruit-funnel">${stages.map((s) => `<div class="funnel-stage"><div class="fs-value">${s.value}</div><div class="fs-label">${safeText(s.label)}</div>${s.rate ? `<div class="fs-rate">${safeText(s.rate)}</div>` : ''}</div>`).join('')}</div></section>`;
 }
 
-// 按渠道看 Offer 产出
+// 按渠道看 Offer 产出（环形图 + 图例）
 function renderChannelAnalysis() {
   const records = state.offerRecords;
   if (!records.length) return '';
@@ -386,9 +386,20 @@ function renderChannelAnalysis() {
     groups[k].total += 1;
     if (r.finalStatus === '已入职') groups[k].onboard += 1;
   });
-  const cards = Object.entries(groups).sort((a, b) => b[1].total - a[1].total)
-    .map(([name, g]) => `<div class="channel-card"><div class="cc-name">${safeText(name)}</div><div class="cc-num">${g.total}</div><div class="cc-sub">Offer 数 · 已入职 ${g.onboard}</div></div>`).join('');
-  return `<section class="panel section-card"><div class="panel-head"><div><h3>渠道分析</h3><p>各招聘渠道的 Offer 产出与入职</p></div></div><div class="channel-grid">${cards}</div></section>`;
+  const entries = Object.entries(groups).sort((a, b) => b[1].total - a[1].total);
+  const total = records.length;
+  // 环形分段配色（玫粉主色系 + 辅助色，循环取用）
+  const COLORS = ['#ec4899', '#d6336c', '#a855c7', '#f59e0b', '#15a06a', '#3b82f6', '#f472b6', '#8b5cf6', '#ef4444', '#0ea5e9', '#84cc16', '#fb923c'];
+  let acc = 0;
+  const segs = entries.map(([name, g], i) => {
+    const start = (acc / total) * 360;
+    acc += g.total;
+    const end = (acc / total) * 360;
+    return { name, count: g.total, onboard: g.onboard, color: COLORS[i % COLORS.length], start, end, pct: Math.round((g.total / total) * 100) };
+  });
+  const gradient = segs.map((s) => `${s.color} ${s.start}deg ${s.end}deg`).join(', ');
+  const legend = segs.map((s) => `<div class="donut-legend-row"><span class="donut-dot" style="background:${s.color}"></span><span class="donut-legend-name">${safeText(s.name)}</span><span class="donut-legend-val">${s.count} 个 · ${s.pct}%${s.onboard ? ` · 入职 ${s.onboard}` : ''}</span></div>`).join('');
+  return `<section class="panel section-card"><div class="panel-head"><div><h3>渠道分析</h3><p>各招聘渠道的 Offer 产出与入职</p></div></div><div class="donut-wrap"><div class="donut-chart" style="background:conic-gradient(${gradient})"><div class="donut-hole"><span class="donut-total">${total}</span><span class="donut-total-label">Offer 总数</span></div></div><div class="donut-legend">${legend}</div></div></section>`;
 }
 
 
