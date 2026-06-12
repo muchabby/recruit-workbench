@@ -1,0 +1,91 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>李诗瑶的工作台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-frame">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-badge">李</div>
+          <div>
+            <h1>李诗瑶的工作台</h1>
+            <p>招聘与工作推进平台</p>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-route="overview">首页</button>
+          <button class="nav-item" data-route="recruitment">招聘管理</button>
+          <button class="nav-item" data-route="events">项目管理</button>
+          <button class="nav-item" data-route="offers">Offer 产出</button>
+          <button class="nav-item" data-route="review">复盘中心</button>
+          <button class="nav-item" data-route="knowledge">知识库</button>
+          <button class="nav-item" data-route="settings">设置中心</button>
+        </nav>
+
+        <div class="sidebar-ai">
+          <div class="sidebar-ai-head">AI 优先处理建议</div>
+          <div class="sidebar-ai-list">
+            <div class="sidebar-tip"><span>1</span><p>高优先级岗位优先推进面试安排。</p></div>
+            <div class="sidebar-tip"><span>2</span><p>OA 系统接口仍在等待跨团队确认。</p></div>
+            <div class="sidebar-tip"><span>3</span><p>本周 Offer 完成率偏低，建议补齐关键岗位。</p></div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="topbar-actions">
+            <label class="field search">
+              <input id="searchInput" type="text" placeholder="搜索岗位 / 事件 / 文档 / 复盘内容" />
+            </label>
+            <button class="toolbar-btn" id="refreshBtn">刷新</button>
+            <button class="toolbar-btn highlight" id="aiBtn">AI 摘要</button>
+            <button class="toolbar-btn strong" id="createBtn">新建</button>
+          </div>
+        </header>
+
+        <main class="workspace-body">
+          <div id="routeView"></div>
+        </main>
+      </div>
+    </div>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-backdrop" id="drawerBackdrop"></div>
+      <div class="drawer-panel">
+        <div class="drawer-head">
+          <div>
+            <span class="drawer-type" id="drawerType">详情</span>
+            <h3 id="drawerTitle">项目详情</h3>
+          </div>
+          <button class="icon-btn" id="closeDrawer">×</button>
+        </div>
+        <div class="drawer-body" id="drawerBody"></div>
+      </div>
+    </aside>
+
+    <div class="confirm-layer" id="confirmLayer" aria-hidden="true">
+      <div class="confirm-backdrop" id="confirmBackdrop"></div>
+      <div class="confirm-box" role="alertdialog" aria-modal="true">
+        <h4 id="confirmTitle">确认操作</h4>
+        <p id="confirmMessage">确定要执行该操作吗？</p>
+        <div class="confirm-actions">
+          <button class="toolbar-btn" id="confirmCancel" type="button">取消</button>
+          <button class="toolbar-btn danger-btn" id="confirmOk" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+    <input type="file" id="importFile" accept="application/json,.json" hidden />
+
+    <script src="./store.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
