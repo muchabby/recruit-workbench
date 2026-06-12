@@ -116,6 +116,9 @@ const normalizeUrl = (value) => {
 
 // ---- 统一枚举（避免手敲文本写不一致）----
 const PRIORITY_OPTIONS = ['P0', 'P1', 'P2'];
+const JOB_LEVEL_OPTIONS = ['无', 'M', 'P', 'X']; // 职级：M=管理/P=专业/X=其他，无=未定
+const ROLE_CATEGORY_OPTIONS = ['社招', '校招', '实习', '外包']; // 职位类型（多选）
+const JOB_STATUS_SUGGEST = ['持续招聘', '已暂停', '已完成', '已关闭']; // 目前状态建议值（可输入新值）
 const ROLE_TYPE_OPTIONS = ['正编', '外包', '实习', '实习生', '顾问'];
 const CHANNEL_OPTIONS = ['BOSS', '内推', '猎头', '供应商/猎头', '官网投递', '招聘官网', '校招', '校企资源', '外包转正', '用人部门推荐', '其他'];
 const OFFER_PROCESS_OPTIONS = ['沟通中', '已发offer', '接受offer', '拒绝offer', '放弃入职'];
@@ -413,7 +416,10 @@ function renderJobCard(item) {
   const age = jobAgeLevel(item);
   const ageTag = age ? `<span class="badge ${age.level === 'ok' ? 'info' : age.level}">开放 ${age.days} 天${age.level === 'danger' ? ' ⚠ 老化' : age.level === 'warn' ? ' · 偏久' : ''}</span>` : '';
   const funnel = candidateFunnelText(item);
-  return `<article class="job-card ${state.selectedRecruitmentId === item.id ? 'selected' : ''}" role="button" tabindex="0" data-kind="recruitment" data-id="${safeText(item.id)}"><div class="job-card-head"><div><h4>${safeText(item.title)}</h4><p class="job-desc">${safeText(item.department)}</p></div><span class="badge ${badgeClass(item.priority === 'P0' ? 'danger' : item.priority === 'P1' ? 'warn' : 'ok')}">${safeText(item.priority)}</span></div><div class="job-meta"><span>需求时间：${safeText(item.requestTime || '暂无')}</span><span>业务对接：${safeText(item.businessContact || '待补充')}</span><span>薪资范围：${safeText(item.salaryRange || '待补充')}</span></div><div class="tags">${ageTag}${funnel ? `<span class="badge ok">候选人 ${(item.candidates || []).length}</span>` : ''}</div>${funnel ? `<div class="funnel-mini">${funnel}</div>` : ''}</article>`;
+  const deptLine = [item.subDept, item.projectGroup].filter(Boolean).join(' / ') || item.department || '';
+  const levelTag = (item.level && item.level !== '无') ? `<span class="badge info">职级 ${safeText(item.level)}</span>` : '';
+  const statusTag = (item.status && item.status !== '持续招聘') ? `<span class="badge warn">${safeText(item.status)}</span>` : '';
+  return `<article class="job-card ${state.selectedRecruitmentId === item.id ? 'selected' : ''}" role="button" tabindex="0" data-kind="recruitment" data-id="${safeText(item.id)}"><div class="job-card-head"><div><h4>${safeText(item.title)}</h4><p class="job-desc">${safeText(deptLine)}</p></div><span class="badge ${badgeClass(item.priority === 'P0' ? 'danger' : item.priority === 'P1' ? 'warn' : 'ok')}">${safeText(item.priority)}</span></div><div class="job-meta"><span>需求时间：${safeText(item.requestTime || '暂无')}</span><span>业务对接：${safeText(item.businessContact || '待补充')}</span><span>HRBP：${safeText(item.hrbp || '待补充')}</span></div><div class="tags">${ageTag}${levelTag}${statusTag}${funnel ? `<span class="badge ok">候选人 ${(item.candidates || []).length}</span>` : ''}</div>${funnel ? `<div class="funnel-mini">${funnel}</div>` : ''}</article>`;
 }
 
 // 岗位下候选人按阶段汇总，生成 mini 漏斗文字（无候选人返回空）
@@ -442,7 +448,11 @@ function renderRecruitmentDetail(item) {
   if (!item) return '<div class="job-desc">暂无岗位</div>';
   const age = jobAgeLevel(item);
   const ageStr = age ? `已开放 ${age.days} 天${age.level === 'danger' ? '（已老化，建议优先攻坚 ⚠）' : age.level === 'warn' ? '（偏久，注意推进）' : ''}` : '暂无需求时间';
-  return `<div class="detail-stack"><div class="trend-card"><div class="trend-title">岗位详情</div><div class="drawer-grid"><div class="kv"><span>需求时间</span><strong>${safeText(item.requestTime || '暂无')}</strong></div><div class="kv"><span>开放时长</span><strong class="${age && age.level !== 'ok' ? (age.level === 'danger' ? 'age-danger' : 'age-warn') : ''}">${safeText(ageStr)}</strong></div><div class="kv"><span>部门</span><strong>${safeText(item.department || '待补充')}</strong></div><div class="kv"><span>优先级</span><strong>${safeText(item.priority || 'P1')}</strong></div><div class="kv"><span>薪资范围</span><strong>${safeText(item.salaryRange || '待补充')}</strong></div><div class="kv"><span>业务对接</span><strong>${safeText(item.businessContact || '待补充')}</strong></div></div></div>${renderCandidatePanel(item)}<div class="trend-card"><div class="trend-title">岗位说明</div><div class="drawer-note"><strong>岗位职责</strong>${renderMarkdownBlock(item.jd || '')}</div><div class="drawer-note"><strong>任职要求</strong>${renderMarkdownBlock(item.profile || '')}</div><div class="drawer-note"><strong>需求原因</strong>${renderMarkdownBlock(item.reason || '')}</div><div class="drawer-note"><strong>备注</strong>${renderMarkdownBlock(item.notes || '')}</div></div><div class="trend-card"><div class="trend-title">推进流程</div><ul class="plain-list">${(item.process || []).map((line) => `<li>${safeText(line)}</li>`).join('') || '<li>暂无</li>'}</ul></div><div class="drawer-actions"><button class="toolbar-btn highlight" type="button" data-action="open-edit">编辑岗位</button></div></div>`;
+  const deptPath = [item.department, item.subDept, item.projectGroup].filter(Boolean).join(' / ') || '待补充';
+  const roleTypes = (Array.isArray(item.roleTypes) ? item.roleTypes : []).join(' · ') || '待补充';
+  // 兼容旧数据：若 profile（任职要求）还有内容则单独显示一块
+  const profileBlock = clean(item.profile) ? `<div class="drawer-note"><strong>任职要求（旧）</strong>${renderMarkdownBlock(item.profile)}</div>` : '';
+  return `<div class="detail-stack"><div class="trend-card"><div class="trend-title">岗位详情</div><div class="drawer-grid"><div class="kv"><span>需求时间</span><strong>${safeText(item.requestTime || '暂无')}</strong></div><div class="kv"><span>开放时长</span><strong class="${age && age.level !== 'ok' ? (age.level === 'danger' ? 'age-danger' : 'age-warn') : ''}">${safeText(ageStr)}</strong></div><div class="kv"><span>部门 / 子部门 / 项目组</span><strong>${safeText(deptPath)}</strong></div><div class="kv"><span>职级</span><strong>${safeText(item.level || '无')}</strong></div><div class="kv"><span>优先级</span><strong>${safeText(item.priority || 'P1')}</strong></div><div class="kv"><span>目前状态</span><strong>${safeText(item.status || '持续招聘')}</strong></div><div class="kv"><span>职位类型</span><strong>${safeText(roleTypes)}</strong></div><div class="kv"><span>薪资范围</span><strong>${safeText(item.salaryRange || '待补充')}</strong></div><div class="kv"><span>业务对接</span><strong>${safeText(item.businessContact || '待补充')}</strong></div><div class="kv"><span>HRBP</span><strong>${safeText(item.hrbp || '待补充')}</strong></div></div></div>${renderCandidatePanel(item)}<div class="trend-card"><div class="trend-title">岗位说明</div><div class="drawer-note"><strong>岗位描述</strong>${renderMarkdownBlock(item.jd || '')}</div>${profileBlock}<div class="drawer-note"><strong>为什么招</strong>${renderMarkdownBlock(item.reason || '')}</div><div class="drawer-note"><strong>备注</strong>${renderMarkdownBlock(item.notes || '')}</div></div><div class="trend-card"><div class="trend-title">推进流程</div><ul class="plain-list">${(item.process || []).map((line) => `<li>${safeText(line)}</li>`).join('') || '<li>暂无</li>'}</ul></div><div class="drawer-actions"><button class="toolbar-btn highlight" type="button" data-action="open-edit">编辑岗位</button></div></div>`;
 }
 
 // 候选人板块：阶段汇总 + 列表（可改阶段/删除）+ 新增表单。数据存岗位的 candidates[]，留 oaId/source 扩展位待 OA 对接
@@ -464,17 +474,25 @@ function renderRecruitmentEditor(item = {}) {
     id: item.id || '',
     requestTime: item.requestTime || '',
     department: item.department || '',
+    subDept: item.subDept || '',
+    projectGroup: item.projectGroup || '',
     title: item.title || '',
+    level: item.level || '无',
     salaryRange: item.salaryRange || '',
     priority: item.priority || 'P1',
     businessContact: item.businessContact || '',
+    hrbp: item.hrbp || '',
+    roleTypes: Array.isArray(item.roleTypes) ? item.roleTypes : (item.roleTypes ? [item.roleTypes] : []),
+    status: item.status || '持续招聘',
     profile: item.profile || '',
     jd: item.jd || '',
     reason: item.reason || '',
     notes: item.notes || '',
     process: Array.isArray(item.process) ? item.process.join('\n') : (item.process || '')
   };
-  return `<form class="editor-form" id="recruitmentEditor"><input type="hidden" name="id" value="${safeText(value.id)}" /><div class="editor-grid"><label class="field"><span>需求时间</span><input name="requestTime" type="date" value="${safeText(value.requestTime)}" /></label><label class="field"><span>部门</span><input name="department" type="text" value="${safeText(value.department)}" /></label><label class="field"><span>岗位名称</span><input name="title" type="text" value="${safeText(value.title)}" /></label><label class="field"><span>薪资范围</span><input name="salaryRange" type="text" value="${safeText(value.salaryRange)}" /></label><label class="field"><span>优先级</span><select name="priority">${optionTags(PRIORITY_OPTIONS, value.priority)}</select></label><label class="field"><span>业务对接人</span><input name="businessContact" type="text" value="${safeText(value.businessContact)}" /></label><label class="field field-span-2"><span>任职要求</span><textarea name="profile" rows="4">${safeText(value.profile)}</textarea></label><label class="field field-span-2"><span>岗位职责</span><textarea name="jd" rows="4">${safeText(value.jd)}</textarea></label><label class="field field-span-2"><span>需求原因</span><textarea name="reason" rows="3">${safeText(value.reason)}</textarea></label><label class="field field-span-2"><span>备注</span><textarea name="notes" rows="3">${safeText(value.notes)}</textarea></label><label class="field field-span-2"><span>面试流程</span><textarea name="process" rows="4">${safeText(value.process)}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-edit">取消</button>${item.id ? '<button class="toolbar-btn danger-btn" type="button" data-action="delete-recruitment">删除岗位</button>' : ''}</div></form>`;
+  // 职位类型多选勾选
+  const roleTypeBoxes = ROLE_CATEGORY_OPTIONS.map((c) => `<label class="check-inline"><input type="checkbox" name="roleTypes" value="${safeText(c)}" ${value.roleTypes.includes(c) ? 'checked' : ''} /> ${safeText(c)}</label>`).join('');
+  return `<form class="editor-form" id="recruitmentEditor"><input type="hidden" name="id" value="${safeText(value.id)}" /><div class="editor-grid"><label class="field"><span>需求时间</span><input name="requestTime" type="date" value="${safeText(value.requestTime)}" /></label><label class="field"><span>部门</span><input name="department" type="text" value="${safeText(value.department)}" placeholder="如 吉比特 / 吉比特研发 / 雷霆运营" /></label><label class="field"><span>子部门</span><input name="subDept" type="text" value="${safeText(value.subDept)}" placeholder="如 公共部门 / 技术中心 / 运营部门" /></label><label class="field"><span>项目组</span><input name="projectGroup" type="text" value="${safeText(value.projectGroup)}" placeholder="如 法务组 / 客服部" /></label><label class="field"><span>岗位名称</span><input name="title" type="text" value="${safeText(value.title)}" /></label><label class="field"><span>职级</span><select name="level">${optionTags(JOB_LEVEL_OPTIONS, value.level)}</select></label><label class="field"><span>优先级</span><select name="priority">${optionTags(PRIORITY_OPTIONS, value.priority)}</select></label><label class="field"><span>薪资范围</span><input name="salaryRange" type="text" value="${safeText(value.salaryRange)}" /></label><label class="field"><span>业务对接人</span><input name="businessContact" type="text" value="${safeText(value.businessContact)}" /></label><label class="field"><span>HRBP</span><input name="hrbp" type="text" value="${safeText(value.hrbp)}" /></label><label class="field"><span>目前状态</span><input name="status" type="text" list="jobStatusSuggest" value="${safeText(value.status)}" /><datalist id="jobStatusSuggest">${JOB_STATUS_SUGGEST.map((s) => `<option value="${safeText(s)}"></option>`).join('')}</datalist></label><label class="field field-span-2"><span>职位类型（可多选）</span><div class="check-row">${roleTypeBoxes}</div></label><label class="field field-span-2"><span>岗位描述（职责 + 任职要求）</span><textarea name="jd" rows="8">${safeText(value.jd)}</textarea></label><label class="field field-span-2"><span>为什么招</span><textarea name="reason" rows="3">${safeText(value.reason)}</textarea></label><label class="field field-span-2"><span>备注</span><textarea name="notes" rows="3">${safeText(value.notes)}</textarea></label><label class="field field-span-2"><span>面试流程（每行一条）</span><textarea name="process" rows="4">${safeText(value.process)}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-edit">取消</button>${item.id ? '<button class="toolbar-btn danger-btn" type="button" data-action="delete-recruitment">删除岗位</button>' : ''}</div></form>`;
 }
 
 function renderOfferSummaryCards(records) {
@@ -766,10 +784,16 @@ function upsertRecruitment(form) {
     id,
     requestTime: clean(data.get('requestTime')),
     department: clean(data.get('department')),
+    subDept: clean(data.get('subDept')),
+    projectGroup: clean(data.get('projectGroup')),
     title,
+    level: clean(data.get('level')) || '无',
     salaryRange: clean(data.get('salaryRange')),
     priority: clean(data.get('priority')) || 'P1',
     businessContact: clean(data.get('businessContact')),
+    hrbp: clean(data.get('hrbp')),
+    roleTypes: data.getAll('roleTypes').map((v) => clean(v)).filter(Boolean),
+    status: clean(data.get('status')) || '持续招聘',
     profile: clean(data.get('profile')),
     jd: clean(data.get('jd')),
     reason: clean(data.get('reason')),

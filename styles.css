@@ -706,3 +706,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .login-btn:active { transform: translateY(1px); }
 .login-btn:disabled { opacity: 0.6; cursor: default; }
 .login-hint { margin: 16px 0 0; font-size: 0.76rem; color: var(--muted-soft); }
+
+/* 招聘编辑：职位类型多选勾选行 */
+.check-row { display: flex; flex-wrap: wrap; gap: 14px; padding: 6px 0; }
+.check-inline { display: inline-flex; align-items: center; gap: 5px; font-size: 0.9rem; color: var(--text); cursor: pointer; }
+.check-inline input { accent-color: var(--pink-deep); width: 15px; height: 15px; cursor: pointer; }
