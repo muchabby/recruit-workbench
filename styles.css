@@ -627,3 +627,82 @@ button, input, select, textarea { font: inherit; color: inherit; }
 @media (max-width: 820px) {
   .kanban-board { grid-template-columns: 1fr; }
 }
+
+/* ===========================================================
+   登录遮罩（云端模式未登录时全屏盖住）
+   =========================================================== */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
+}
+.login-overlay.show { display: flex; }
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  box-shadow: 0 18px 50px -18px rgba(214, 51, 108, 0.28);
+  text-align: center;
+}
+.login-brand { display: flex; justify-content: center; margin-bottom: 14px; }
+.login-card .brand-badge {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; font-weight: 700; color: #fff;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--pink), var(--pink-deep));
+  box-shadow: 0 8px 20px -8px rgba(214, 51, 108, 0.5);
+}
+.login-card h2 { margin: 4px 0 2px; font-size: 1.18rem; color: var(--text); }
+.login-sub { margin: 0 0 20px; font-size: 0.86rem; color: var(--muted); }
+.login-field { display: block; text-align: left; margin-bottom: 14px; }
+.login-field > span { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
+.login-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--pink-softer);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.login-field input:focus {
+  outline: none;
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px var(--pink-soft);
+  background: #fff;
+}
+.login-error {
+  min-height: 18px;
+  margin: -4px 0 10px;
+  font-size: 0.82rem;
+  color: var(--red);
+  text-align: left;
+}
+.login-btn {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--pink), var(--pink-deep));
+  box-shadow: 0 10px 24px -10px rgba(214, 51, 108, 0.5);
+  transition: filter 0.15s, transform 0.05s;
+}
+.login-btn:hover { filter: brightness(1.04); }
+.login-btn:active { transform: translateY(1px); }
+.login-btn:disabled { opacity: 0.6; cursor: default; }
+.login-hint { margin: 16px 0 0; font-size: 0.76rem; color: var(--muted-soft); }

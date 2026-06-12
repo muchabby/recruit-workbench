@@ -85,6 +85,28 @@
 
     <input type="file" id="importFile" accept="application/json,.json" hidden />
 
+    <!-- 登录遮罩：云端模式下未登录时全屏盖住，登录成功才放行 -->
+    <div class="login-overlay" id="loginOverlay" aria-hidden="true">
+      <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+        <div class="login-brand"><div class="brand-badge">李</div></div>
+        <h2 id="loginTitle">李诗瑶的工作台</h2>
+        <p class="login-sub">请登录后使用</p>
+        <label class="login-field">
+          <span>邮箱</span>
+          <input id="loginEmail" type="email" autocomplete="username" placeholder="name@example.com" />
+        </label>
+        <label class="login-field">
+          <span>密码</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" placeholder="请输入密码" />
+        </label>
+        <div class="login-error" id="loginError" aria-live="polite"></div>
+        <button class="login-btn" id="loginSubmit" type="button">登录</button>
+        <p class="login-hint">账号由管理员开通，如需开通请联系管理员。</p>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="./auth.js"></script>
     <script src="./store.js"></script>
     <script src="./app.js"></script>
   </body>

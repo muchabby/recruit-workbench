@@ -90,7 +90,16 @@
     if (!f) throw new Error('当前环境没有 fetch');
     const base = `${String(config.url).replace(/\/$/, '')}/rest/v1`;
     const key = config.key;
-    const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+    // apikey 头始终用 publishable key（PostgREST 用它路由项目）；
+    // Authorization 头每次请求动态取：登录后是用户 JWT（数据库识别为 authenticated），
+    // 未登录回退 publishable key（收紧 RLS 后会被数据库拒，正是我们要的）。
+    // config.getToken 由 app.js 接 WorkbenchAuth.getToken 注入；没传则退化为旧行为（用 key）。
+    const getToken = (typeof config.getToken === 'function') ? config.getToken : () => key;
+    const headers = () => ({
+      apikey: key,
+      Authorization: `Bearer ${getToken() || key}`,
+      'Content-Type': 'application/json'
+    });
     const table = (col) => `wb_${col.name}`;
     const SINGLE_ID = 'current';
 
@@ -105,7 +114,7 @@
     };
     const upsert = (col, rows) => req(
       `${base}/${table(col)}?on_conflict=id`,
-      { method: 'POST', headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows) },
+      { method: 'POST', headers: { ...headers(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows) },
       `写入 ${col.name}`
     );
 
@@ -113,23 +122,23 @@
       name: 'supabase',
       async loadOne(col) {
         if (col.kind === 'single') {
-          const res = await req(`${base}/${table(col)}?id=eq.${SINGLE_ID}&select=data`, { headers }, `加载 ${col.name}`);
+          const res = await req(`${base}/${table(col)}?id=eq.${SINGLE_ID}&select=data`, { headers: headers() }, `加载 ${col.name}`);
           const rows = await res.json();
           return rows[0]?.data ?? null;
         }
-        const res = await req(`${base}/${table(col)}?select=data`, { headers }, `加载 ${col.name}`);
+        const res = await req(`${base}/${table(col)}?select=data`, { headers: headers() }, `加载 ${col.name}`);
         const rows = await res.json();
         return rows.map((r) => r.data);
       },
       async persistList(col, fullArray, change) {
         const c = change || {};
         if (c.op === 'remove') {
-          await req(`${base}/${table(col)}?id=eq.${encodeURIComponent(c.id)}`, { method: 'DELETE', headers }, `删除 ${col.name}`);
+          await req(`${base}/${table(col)}?id=eq.${encodeURIComponent(c.id)}`, { method: 'DELETE', headers: headers() }, `删除 ${col.name}`);
           return;
         }
         if (c.op === 'replaceAll') {
           // 清表（id 非空即全部）再批量插入
-          await req(`${base}/${table(col)}?id=not.is.null`, { method: 'DELETE', headers }, `清空 ${col.name}`);
+          await req(`${base}/${table(col)}?id=not.is.null`, { method: 'DELETE', headers: headers() }, `清空 ${col.name}`);
           if (fullArray.length) await upsert(col, fullArray.map((r) => ({ id: r.id, data: r })));
           return;
         }
@@ -140,7 +149,7 @@
         await upsert(col, [{ id: SINGLE_ID, data: value }]);
       },
       async clearOne(col) {
-        await req(`${base}/${table(col)}?id=not.is.null`, { method: 'DELETE', headers }, `清空 ${col.name}`);
+        await req(`${base}/${table(col)}?id=not.is.null`, { method: 'DELETE', headers: headers() }, `清空 ${col.name}`);
       }
     };
   }

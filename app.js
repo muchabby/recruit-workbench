@@ -46,8 +46,17 @@ const wbSeed = {
   knowledge: defaultData.knowledge,
   review: defaultData.review
 };
+// 登录模块用同一份 Supabase 配置。云端模式下：先 configure（建客户端），
+// 适配器注入 getToken —— 每次请求带当前用户 JWT，未登录回退 publishable key（会被收紧后的 RLS 拒）。
+if (SUPABASE.url && SUPABASE.key && window.WorkbenchAuth) {
+  window.WorkbenchAuth.configure(SUPABASE);
+}
+const supabaseAdapterCfg = {
+  ...SUPABASE,
+  getToken: () => (window.WorkbenchAuth ? window.WorkbenchAuth.getToken() : SUPABASE.key)
+};
 const store = createWorkbenchStore({
-  adapter: (SUPABASE.url && SUPABASE.key) ? WorkbenchStoreAdapters.SupabaseAdapter(SUPABASE) : undefined,
+  adapter: (SUPABASE.url && SUPABASE.key) ? WorkbenchStoreAdapters.SupabaseAdapter(supabaseAdapterCfg) : undefined,
   seed: wbSeed
 });
 
@@ -588,7 +597,14 @@ function renderSettingsPage() {
   const storeMode = store.adapterName === 'supabase'
     ? '<strong>数据存储</strong><span>已连接 Supabase 云端，多设备/多人共享同一份数据。本地仅作离线兜底。</span>'
     : '<strong>数据存储</strong><span>当前为本机模式（localStorage），数据只在这台浏览器。填入 Supabase 配置后即切换为云端共享。</span>';
-  return `<section class="panel single-module"><div class="panel-head"><div><h2>设置中心</h2><p>数据管理与备份</p></div></div><div class="trend-card"><div class="trend-title">数据备份</div><div class="job-desc">当前数据全部存在这台浏览器本地（${safeText(counts)}）。清浏览器缓存会丢失，建议定期导出备份。</div><div class="export-status">${exportTip}</div><div class="drawer-actions"><button class="toolbar-btn strong" type="button" data-action="export-data">导出备份（JSON）</button><button class="toolbar-btn highlight" type="button" data-action="import-data">从备份导入</button><button class="toolbar-btn danger-btn" type="button" data-action="clear-data">清空所有数据</button></div></div><div class="settings-placeholder"><div class="settings-box"><strong>提醒规则</strong><span>首页「AI 优先处理建议」已按真实数据派生：P0 岗位、高风险事件、待跟进 Offer。</span></div><div class="settings-box">${storeMode}</div><div class="settings-box"><strong>后续可扩展</strong><span>上云同步、飞书每日推送等能力可在此基础上接入。</span></div></div></section>`;
+  // 登录状态块：云端模式且已登录时显示当前账号 + 退出登录按钮
+  let accountBox = '';
+  if (window.WorkbenchAuth && window.WorkbenchAuth.isEnabled()) {
+    const user = window.WorkbenchAuth.getUser();
+    const email = user && user.email ? safeText(user.email) : '已登录';
+    accountBox = `<div class="settings-box"><strong>登录账号</strong><span>当前以 ${email} 登录。数据接口已要求登录，未登录无法读写。</span><div class="drawer-actions" style="margin-top:10px"><button class="toolbar-btn danger-btn" type="button" data-action="sign-out">退出登录</button></div></div>`;
+  }
+  return `<section class="panel single-module"><div class="panel-head"><div><h2>设置中心</h2><p>数据管理与备份</p></div></div><div class="trend-card"><div class="trend-title">数据备份</div><div class="job-desc">当前数据全部存在这台浏览器本地（${safeText(counts)}）。清浏览器缓存会丢失，建议定期导出备份。</div><div class="export-status">${exportTip}</div><div class="drawer-actions"><button class="toolbar-btn strong" type="button" data-action="export-data">导出备份（JSON）</button><button class="toolbar-btn highlight" type="button" data-action="import-data">从备份导入</button><button class="toolbar-btn danger-btn" type="button" data-action="clear-data">清空所有数据</button></div></div><div class="settings-placeholder">${accountBox}<div class="settings-box"><strong>提醒规则</strong><span>首页「AI 优先处理建议」已按真实数据派生：P0 岗位、高风险事件、待跟进 Offer。</span></div><div class="settings-box">${storeMode}</div><div class="settings-box"><strong>后续可扩展</strong><span>上云同步、飞书每日推送等能力可在此基础上接入。</span></div></div></section>`;
 }
 
 function renderAiSummary() {
@@ -1118,6 +1134,11 @@ function bindRouteEvents() {
     root.querySelector('[data-action="export-data"]')?.addEventListener('click', exportData);
     root.querySelector('[data-action="import-data"]')?.addEventListener('click', () => els.importFile?.click());
     root.querySelector('[data-action="clear-data"]')?.addEventListener('click', clearAllData);
+    root.querySelector('[data-action="sign-out"]')?.addEventListener('click', async () => {
+      if (await confirmAction({ title: '退出登录', message: '确定退出登录？退出后需重新登录才能查看数据。', okText: '退出' })) {
+        window.WorkbenchAuth?.signOut();
+      }
+    });
   }
 }
 
@@ -1208,6 +1229,12 @@ function attachGlobalEvents() {
     console.error('保存失败', ctx, err);
     toast('保存失败，请重试或检查网络', 'danger');
   });
+  // 登录闸门：云端模式下未登录会卡在这里弹登录框，登录成功才往下走加载数据。
+  // 本机模式（没配 Supabase）requireLogin 直接返回，不拦截。
+  if (window.WorkbenchAuth) {
+    try { await window.WorkbenchAuth.requireLogin(); }
+    catch (err) { console.error('登录流程异常', err); }
+  }
   attachGlobalEvents();
   try {
     await initState();
