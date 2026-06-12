@@ -191,7 +191,13 @@ function optionTags(options, current) {
   }).join('');
 }
 
-// 岗位开放天数（按 requestTime 到今天）
+// 渠道候选 = 内置渠道 + 现有 Offer 用过的渠道（去重）。用于编辑表单的 datalist，支持手动新增。
+function channelChoices() {
+  const set = new Set(CHANNEL_OPTIONS.filter((c) => c)); // 去掉空项
+  getOfferRecords().forEach((o) => { if (o && o.channel) set.add(o.channel); });
+  return [...set];
+}
+
 function jobOpenDays(item) {
   if (!item.requestTime) return null;
   const start = new Date(item.requestTime);
@@ -551,7 +557,7 @@ function renderOfferEditForm(record = {}) {
   const curDept = (DEPT_GROUPS.includes(record.deptGroup) && record.department) ? record.department : normalizeDept(record.department).dept;
   const groupOpts = `<option value="">（请选择大类）</option>` + DEPT_GROUPS.map((g) => `<option value="${safeText(g)}" ${curGroup === g ? 'selected' : ''}>${safeText(g)}</option>`).join('');
   const deptOpts = subDeptOptions(curGroup, curDept);
-  return `<form class="editor-form" id="offerEditor" data-offer-id="${safeText(record.id || '')}"><div class="editor-grid"><label class="field field-span-2"><span>关联岗位（选了自动带出部门/岗位名）</span><select name="jobId" id="offerJobPicker">${jobOpts}</select></label><label class="field"><span>拟录用时间</span><input name="plannedDate" type="date" value="${safeText(record.plannedDate || '')}" /></label><label class="field"><span>姓名</span><input name="name" type="text" value="${safeText(record.name || '')}" /></label><label class="field"><span>部门大类</span><select name="deptGroup" id="offerDeptGroup">${groupOpts}</select></label><label class="field"><span>子部门 / 项目组</span><select name="department" id="offerDept">${deptOpts}</select></label><label class="field"><span>岗位名称</span><input name="title" id="offerTitle" type="text" value="${safeText(record.title || '')}" /></label><label class="field"><span>岗位类型</span><select name="roleType">${optionTags(ROLE_TYPE_OPTIONS, record.roleType)}</select></label><label class="field"><span>流程状态</span><select name="processStatus">${optionTags(OFFER_PROCESS_OPTIONS, record.processStatus)}</select></label><label class="field"><span>渠道</span><select name="channel">${optionTags(CHANNEL_OPTIONS, record.channel)}</select></label><label class="field"><span>最终状态</span><select name="finalStatus">${optionTags(OFFER_FINAL_OPTIONS, record.finalStatus)}</select></label><label class="field field-span-2"><span>备注</span><textarea name="note" rows="4">${safeText(record.note || '')}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-offer-edit">取消</button><button class="toolbar-btn danger-btn" type="button" data-action="delete-offer">删除</button></div></form>`;
+  return `<form class="editor-form" id="offerEditor" data-offer-id="${safeText(record.id || '')}"><div class="editor-grid"><label class="field field-span-2"><span>关联岗位（选了自动带出部门/岗位名）</span><select name="jobId" id="offerJobPicker">${jobOpts}</select></label><label class="field"><span>拟录用时间</span><input name="plannedDate" type="date" value="${safeText(record.plannedDate || '')}" /></label><label class="field"><span>姓名</span><input name="name" type="text" value="${safeText(record.name || '')}" /></label><label class="field"><span>部门大类</span><select name="deptGroup" id="offerDeptGroup">${groupOpts}</select></label><label class="field"><span>子部门 / 项目组</span><select name="department" id="offerDept">${deptOpts}</select></label><label class="field"><span>岗位名称</span><input name="title" id="offerTitle" type="text" value="${safeText(record.title || '')}" /></label><label class="field"><span>岗位类型</span><select name="roleType">${optionTags(ROLE_TYPE_OPTIONS, record.roleType)}</select></label><label class="field"><span>流程状态</span><select name="processStatus">${optionTags(OFFER_PROCESS_OPTIONS, record.processStatus)}</select></label><label class="field"><span>渠道（可选已有或直接输入新渠道）</span><input name="channel" type="text" list="channelChoices" value="${safeText(record.channel || '')}" placeholder="如 BOSS / 内推 / 自定义" /><datalist id="channelChoices">${channelChoices().map((c) => `<option value="${safeText(c)}"></option>`).join('')}</datalist></label><label class="field"><span>最终状态</span><select name="finalStatus">${optionTags(OFFER_FINAL_OPTIONS, record.finalStatus)}</select></label><label class="field field-span-2"><span>备注</span><textarea name="note" rows="4">${safeText(record.note || '')}</textarea></label></div><div class="drawer-actions"><button class="toolbar-btn strong" type="submit">保存</button><button class="toolbar-btn" type="button" data-action="cancel-offer-edit">取消</button><button class="toolbar-btn danger-btn" type="button" data-action="delete-offer">删除</button></div></form>`;
 }
 
 // 生成某大类下子部门的 option 标签；group 为空则给提示项
